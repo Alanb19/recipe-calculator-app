@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Pickle cache (auto-generated, contains local paths)
+backend/.recipes_cache.pkl
+
+# Large data files (stay local)
+backend/FICHAS_EASILYS_CACHE.json
+*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Env files
+.env
+*.env
