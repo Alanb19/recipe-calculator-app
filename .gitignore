@@ -14,9 +14,21 @@ env/
 # Pickle cache (auto-generated, contains local paths)
 backend/.recipes_cache.pkl
 
-# Large data files (stay local)
+# Large / proprietary data files (stay local — repo is PUBLIC)
 backend/FICHAS_EASILYS_CACHE.json
+FICHAS_EASILYS_CACHE.json
 *.json
+
+# Calculadora generada: embebe ~2525 recetas propietarias de Easilys.
+# NUNCA commitear en repo publico. Se regenera con standalone/build_calc.py
+Calculadora_Nora.html
+Calculadora_Nora*.html
+*.html.bak*
+*.bak_*
+recipes_embed.json
+.recipes_cache.pkl
+standalone/Calculadora_Nora.html
+standalone/*.json
 
 # OS
 .DS_Store
