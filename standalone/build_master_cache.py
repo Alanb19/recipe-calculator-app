@@ -5,13 +5,18 @@ FICHAS_EASILYS_CACHE.json con todas las PEs y subPEs disponibles.
 Uso: python build_master_cache.py
 Requiere: pip install beautifulsoup4
 """
-import json, re, os
+import json, re, os, unicodedata, glob
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-# ── Rutas ────────────────────────────────────────────────────────────────────
-DOWNLOADS = r"C:\Users\Usuario\Downloads"
-CACHE_OUT  = r"C:\Users\Usuario\OneDrive - Nora Real Food\Escritorio\04_PROYECTOS_CLAUDE\proyecto claude sincronizacion hoja de produccion\files\FICHAS_EASILYS_CACHE.json"
+# ── Rutas (configurables por env; default relativo a Path.home()) ────────────
+DOWNLOADS = os.environ.get("NRF_DOWNLOADS", str(Path.home() / "Downloads"))
+CACHE_OUT = os.environ.get(
+    "EASILYS_CACHE",
+    str(Path.home() / "OneDrive - Nora Real Food" / "Escritorio" /
+        "04_PROYECTOS_CLAUDE" / "proyecto claude sincronizacion hoja de produccion" /
+        "files" / "FICHAS_EASILYS_CACHE.json"),
+)
 
 SOURCE_FILES = [
     rf"{DOWNLOADS}\RAW_FICHAS_EASILYS.json",
@@ -194,26 +199,84 @@ for fpath in SOURCE_FILES:
 
 print(f"\nTotal fichas HTML únicas a parsear: {len(all_htmls)}")
 
-# ── Parsear ───────────────────────────────────────────────────────────────────
+# ── Mapa de identidad: listado completo Easilys ──────────────────────────────
+# La clave de cada fichero descargado es ambigua (lotes viejos = recipe.id,
+# descargas nuevas = element.id; colisionan numericamente). La identidad real
+# se toma del CONTENIDO de la ficha (codigo/nombre) mapeado contra el listado:
+#   element.extCode == codigo de la ficha   (autoritativo)
+#   norm(element.label) == norm(nombre)      (fallback)
+# Asi la cache queda keyed SIEMPRE por Easilys element id, sin colisiones.
+def _norm(s):
+    s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+    return ' '.join(re.sub(r'[^A-Z0-9 ]+', ' ', s).split())
+
+ext2el, lbl2el = {}, {}
+listado_files = sorted(glob.glob(os.path.join(DOWNLOADS, 'listado_completo_recetas_easilys*.json')))
+for lf in listado_files:
+    try:
+        j = json.load(open(lf, encoding='utf-8'))
+        rows = j['data'] if isinstance(j, dict) and 'data' in j else j
+    except Exception as e:
+        print(f"  aviso: no se pudo leer {Path(lf).name}: {e}")
+        continue
+    for it in rows:
+        el = (it or {}).get('element') or {}
+        elid = el.get('id')
+        if elid is None:
+            continue
+        elid = str(elid)
+        ec = str(el.get('extCode') or '').strip().upper()
+        if ec:
+            ext2el.setdefault(ec, elid)
+        for fld in ('label', 'labelPublic'):
+            n = _norm(el.get(fld))
+            if n:
+                lbl2el.setdefault(n, elid)
+print(f"Listado: {len(listado_files)} fichero(s) | extCode->el {len(ext2el)} | label->el {len(lbl2el)}")
+if not listado_files:
+    print("  AVISO: sin listado_completo_*.json en Downloads -> re-key por element id"
+          " NO disponible; se usa la clave del fichero (puede haber colisiones).")
+
+# ── Parsear + re-key por element id ──────────────────────────────────────────
 print("\nParseando...")
 cache = {}
-ok = err = 0
+ok = err = rk_ext = rk_lbl = rk_none = 0
 
 for i, (eid, html) in enumerate(sorted(all_htmls.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0)):
     result = parse_ficha(eid, html)
-    if result:
-        cache[eid] = result
-        # Indexar también por código externo
-        code = result.get('codigo', '').strip()
-        if code and code != eid and code not in cache:
-            cache[code] = result
-        ok += 1
-    else:
+    if not result:
         err += 1
+        continue
+    ok += 1
+    code = (result.get('codigo') or '').strip()
+    # identidad real -> element id
+    real = ext2el.get(code.upper())
+    if real:
+        rk_ext += 1
+    else:
+        real = lbl2el.get(_norm(result.get('nombre')))
+        if real:
+            rk_lbl += 1
+        else:
+            real = str(eid)        # fallback: clave del fichero
+            rk_none += 1
+    result['id'] = real
+    prev = cache.get(real)
+    # en colision: gana la que tiene ingredientes; si empate, la primera
+    if prev is None or (not (prev.get('ingredientes') or []) and (result.get('ingredientes') or [])):
+        cache[real] = result
     if (i + 1) % 200 == 0:
-        print(f"  {i+1}/{len(all_htmls)} — {ok} ok, {err} errores")
+        print(f"  {i+1}/{len(all_htmls)} — {ok} ok, {err} err")
+
+# Alias por código externo (sin pisar una clave de id real)
+real_ids = {v['id'] for v in list(cache.values()) if isinstance(v, dict) and v.get('id')}
+for v in list(cache.values()):
+    code = (v.get('codigo') or '').strip()
+    if code and code not in cache and code not in real_ids:
+        cache[code] = v
 
 print(f"\nParseadas: {ok} | Errores: {err}")
+print(f"Re-key: por extCode {rk_ext} | por nombre {rk_lbl} | sin mapear (clave fichero) {rk_none}")
 print(f"Entradas en cache (con aliases): {len(cache)}")
 
 # ── Estadísticas ──────────────────────────────────────────────────────────────

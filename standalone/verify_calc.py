@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 """Feedback loop para Calculadora_Nora.html. Falla ruidoso si algo no cuadra."""
 import json, os, re, subprocess, sys
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE = r"C:\Users\Usuario\OneDrive - Nora Real Food\Escritorio\04_PROYECTOS_CLAUDE\proyecto claude sincronizacion hoja de produccion\files\FICHAS_EASILYS_CACHE.json"
-HTML = os.path.join(HERE, "Calculadora_Nora.html")
+CACHE = os.environ.get(
+    "EASILYS_CACHE",
+    str(Path.home() / "OneDrive - Nora Real Food" / "Escritorio" /
+        "04_PROYECTOS_CLAUDE" / "proyecto claude sincronizacion hoja de produccion" /
+        "files" / "FICHAS_EASILYS_CACHE.json"),
+)
+# build_calc.py escribe en NRF_CALC_OUT (default: ~/Desktop). Leer de ahi.
+HTML = os.environ.get("NRF_CALC_OUT", str(Path.home() / "Desktop" / "Calculadora_Nora.html"))
 
 fails = []
 def check(cond, msg):
@@ -57,12 +64,19 @@ for rid, v in cache_by_id.items():
     if len(e["comps"]) != len(v.get("ingredientes", [])): bad += 1
 check(bad == 0, f"campos (nombre/codigo/comps) coinciden con cache : {bad} discrepancias")
 
-# 6. Matematica de escalado: id 1 POLLO MORUNO, PE COUS COUS MORUNO 0.13 x100 = 13
-r1 = RECIPES["1"]
-ccm = next(c for c in r1["comps"] if c["name"] == "PE COUS COUS MORUNO")
-check(abs(ccm["qty"] - 0.13) < 1e-9, f"qty x1 PE COUS COUS MORUNO = {ccm['qty']} (esp. 0.13)")
-check(abs(round(ccm["qty"] * 100, 3) - 13.0) < 1e-9,
-      f"escalado x100 = {round(ccm['qty']*100,3)} kg (esp. 13.0)")
+# 6. Matematica de escalado: POLLO MORUNO CON COUS COUS, PE COUS COUS MORUNO
+#    0.13 x100 = 13. Busqueda por NOMBRE (robusta al re-key por element id;
+#    los ids ya no son 1,2,3 sino element ids de Easilys).
+r1 = next((r for r in RECIPES.values()
+           if r["name"].strip().upper() == "POLLO MORUNO CON COUS COUS"), None)
+check(r1 is not None, "receta 'POLLO MORUNO CON COUS COUS' presente")
+if r1:
+    ccm = next((c for c in r1["comps"] if c["name"] == "PE COUS COUS MORUNO"), None)
+    check(ccm is not None, "comp 'PE COUS COUS MORUNO' presente en POLLO MORUNO")
+    if ccm:
+        check(abs(ccm["qty"] - 0.13) < 1e-9, f"qty x1 PE COUS COUS MORUNO = {ccm['qty']} (esp. 0.13)")
+        check(abs(round(ccm["qty"] * 100, 3) - 13.0) < 1e-9,
+              f"escalado x100 = {round(ccm['qty']*100,3)} kg (esp. 13.0)")
 
 # 7. Resolucion de PE por nombre (no debe empeorar vs cache: ~42 verdaderas ausentes)
 def resolve(name):
@@ -83,10 +97,17 @@ for r in RECIPES.values():
                 unresolved_names.add(c["name"])
 print(f"      PE refs: {pe_refs}  |  irresolubles: {unresolved} "
       f"({len(unresolved_names)} nombres distintos)")
-# Linea base canonica: el propio cache no contiene estas 42 fichas (PP/PE/varios).
-# No es un bug del calculador -> se exige no regresion sobre nombres distintos.
-check(len(unresolved_names) <= 42,
-      f"PE irresolubles == hueco real del cache ({len(unresolved_names)} nombres <= 42, sin regresion)")
+# Linea base: estas fichas PE/PP NO existen en el export de Easilys (gap de
+# origen, no bug del calculador). El re-key por element id (2026-05) deduplico
+# el cache (2515->~2247) y destapo el hueco REAL: el "42" anterior estaba
+# artificialmente bajo porque las colisiones recipe.id<->element.id dejaban
+# entradas duplicadas que resolvian nombres por casualidad. Valor real ~76;
+# baseline 80 con holgura para la rotacion semanal. Subir solo si se confirma
+# que el aumento es gap de origen (PP/PE sin ficha), nunca para tapar un bug.
+BASELINE_IRRESOLUBLES = 80
+check(len(unresolved_names) <= BASELINE_IRRESOLUBLES,
+      f"PE irresolubles == hueco real del cache "
+      f"({len(unresolved_names)} nombres <= {BASELINE_IRRESOLUBLES}, sin regresion)")
 print("      fichas PE ausentes en el cache de origen (no es fallo del calculador):")
 for n in sorted(unresolved_names):
     print("        -", n)

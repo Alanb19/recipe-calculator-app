@@ -7,12 +7,15 @@ Indexado por ID interno de Easilys (NO por codigo) -> no se pierde ninguna recet
 aunque varias compartan el mismo 'codigo'.
 """
 import json, os, html as _html
+from pathlib import Path
 
-CACHE = os.environ.get(
-    "EASILYS_CACHE",
-    r"C:\Users\Usuario\OneDrive - Nora Real Food\Escritorio\04_PROYECTOS_CLAUDE\proyecto claude sincronizacion hoja de produccion\files\FICHAS_EASILYS_CACHE.json",
-)
-OUT = r"C:\Users\Usuario\Desktop\Calculadora_Nora.html"
+# Rutas configurables por variable de entorno; default relativo a la carpeta
+# del usuario (sin C:\Users\<usuario> hardcodeado -> repo publico seguro).
+_DEFAULT_CACHE = Path.home() / "OneDrive - Nora Real Food" / "Escritorio" / \
+    "04_PROYECTOS_CLAUDE" / "proyecto claude sincronizacion hoja de produccion" / \
+    "files" / "FICHAS_EASILYS_CACHE.json"
+CACHE = os.environ.get("EASILYS_CACHE", str(_DEFAULT_CACHE))
+OUT = os.environ.get("NRF_CALC_OUT", str(Path.home() / "Desktop" / "Calculadora_Nora.html"))
 
 
 def build_dataset(cache_path: str):

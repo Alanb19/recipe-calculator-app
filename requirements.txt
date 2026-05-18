@@ -1,3 +1,2 @@
-fastapi==0.111.0
-uvicorn==0.29.0
-openpyxl==3.1.2
+# Standalone (carpeta standalone/): generador offline de la calculadora
+beautifulsoup4>=4.12
